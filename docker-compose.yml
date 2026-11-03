@@ -1,0 +1,49 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlog-analyzer-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-smartlog}:${POSTGRES_PASSWORD:-smartlog_dev}@db:5432/${POSTGRES_DB:-smartlog}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-20000}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - smartlog-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: smartlog-analyzer-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smartlog}
+      POSTGRES_USER: ${POSTGRES_USER:-smartlog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartlog_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - smartlog-network
+
+volumes:
+  postgres-data:
+
+networks:
+  smartlog-network:
+    driver: bridge

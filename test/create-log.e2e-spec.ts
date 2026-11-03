@@ -1,13 +1,24 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { jest } from '@jest/globals';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/infrastructure/persistence/prisma/prisma.service';
 
 describe('CreateLog (e2e)', () => {
   let app: INestApplication;
 
   beforeEach(async () => {
-    app = await NestFactory.create(AppModule);
+    const prismaMock = {
+      log: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => data),
+      },
+    };
+    const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(PrismaService)
+      .useValue(prismaMock)
+      .compile();
+    app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
   });

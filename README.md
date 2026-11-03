@@ -21,6 +21,65 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
+## SmartLog Analyzer
+
+API para ingestar y analizar logs de microservicios. El proyecto utiliza NestJS y separa Presentación, Dominio e Infraestructura mediante módulos en cascada.
+
+## Ejecutar con Docker Compose
+
+Requisitos: Docker Desktop con Compose habilitado.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Servicios:
+
+- API: `http://localhost:3000`
+- Swagger: `http://localhost:3000/docs`
+- PostgreSQL: `localhost:5432`
+
+La base de datos ejecuta automáticamente la migración y el seed al crearse el volumen por primera vez. Para reinicializarla:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Variables principales:
+
+| Variable | Uso | Valor por defecto |
+|---|---|---|
+| `APP_PORT` | Puerto publicado de la API | `3000` |
+| `POSTGRES_DB` | Nombre de la base | `smartlog` |
+| `POSTGRES_USER` | Usuario de PostgreSQL | `smartlog` |
+| `POSTGRES_PASSWORD` | Contraseña local de desarrollo | `smartlog_dev` |
+| `POSTGRES_PORT` | Puerto publicado de PostgreSQL | `5432` |
+| `OPENAI_API_KEY` | Clave del proveedor LLM | vacío |
+| `OPENAI_MODEL` | Modelo LLM | `gpt-4o-mini` |
+| `OPENAI_TIMEOUT_MS` | Timeout del LLM | `20000` |
+
+`CreateLog` utiliza Prisma como ORM y persiste los logs en PostgreSQL. Las migraciones de Prisma se encuentran en `prisma/migrations`.
+
+## Endpoint disponible
+
+```http
+POST /api/logs
+Content-Type: application/json
+```
+
+```json
+{
+  "service": "payments",
+  "level": "ERROR",
+  "message": "Connection timeout",
+  "timestamp": "2026-11-02T14:00:00.000Z",
+  "traceId": "trace-001",
+  "metadata": { "endpoint": "/payments" }
+}
+```
+
 ## Description
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
