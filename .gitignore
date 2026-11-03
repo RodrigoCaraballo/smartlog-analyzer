@@ -10,6 +10,8 @@
 logs
 !src/domain/logs/
 !src/domain/logs/**
+!src/presentation/http/logs/
+!src/presentation/http/logs/**
 *.log
 npm-debug.log*
 pnpm-debug.log*
