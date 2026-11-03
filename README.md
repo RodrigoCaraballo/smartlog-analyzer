@@ -115,6 +115,28 @@ GET /api/health
 
 Los estados de análisis son `PENDING`, `RUNNING`, `COMPLETED` y `FAILED`. El health check verifica PostgreSQL y Redis.
 
+## Logging estructurado
+
+La API escribe logs en una línea JSON por evento. Cada request genera eventos `http.request.started`, `http.request.completed` o `http.request.failed`. Incluyen un `requestId` (también devuelto en el header `x-request-id`), método, ruta, código HTTP, duración y, cuando existe, `analysisId`.
+
+El worker genera además `analysis.job.started`, `analysis.job.completed` y `analysis.job.failed`, incluyendo `jobId`, `analysisId`, intento y duración. Esto permite seguir un análisis desde `POST /api/logs/analyze` hasta su procesamiento en BullMQ.
+
+Ejemplo:
+
+```json
+{
+  "timestamp": "2026-11-03T14:30:00.000Z",
+  "level": "info",
+  "message": "http.request.started",
+  "requestId": "req-uuid",
+  "method": "GET",
+  "path": "/api/health",
+  "queryKeys": []
+}
+```
+
+No se registran bodies de requests, API keys, prompts ni mensajes completos de logs. Los errores HTTP se registran como `http.request.failed` con información técnica segura.
+
 ## Tests
 
 Instalar dependencias y generar el cliente Prisma:

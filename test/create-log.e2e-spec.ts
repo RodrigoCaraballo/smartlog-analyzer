@@ -5,6 +5,8 @@ import { jest } from '@jest/globals';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/persistence/prisma/prisma.service';
 import { HEALTH_CHECKS } from '../src/domain/health/ports/health-check.port';
+import { StructuredLogger } from '../src/infrastructure/logging/structured.logger';
+import { StructuredRequestLoggingInterceptor } from '../src/presentation/http/logging/structured-request-logging.interceptor';
 
 describe('CreateLog (e2e)', () => {
   let app: INestApplication;
@@ -49,6 +51,8 @@ describe('CreateLog (e2e)', () => {
       .compile();
     app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useLogger(new StructuredLogger());
+    app.useGlobalInterceptors(new StructuredRequestLoggingInterceptor(new StructuredLogger()));
     await app.init();
   });
 
@@ -150,9 +154,10 @@ describe('CreateLog (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/health')
       .expect(200)
-      .expect(({ body }) => {
+      .expect(({ body, headers }) => {
         expect(body.status).toBe('ok');
         expect(body.checks).toEqual({ database: 'up', redis: 'up' });
+        expect(headers['x-request-id']).toEqual(expect.any(String));
       });
   });
 
