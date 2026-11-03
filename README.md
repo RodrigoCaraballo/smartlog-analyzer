@@ -57,7 +57,7 @@ docker compose down -v
 docker compose up --build
 ```
 
-El seed contiene logs de `payments`, `catalog`, `auth` y `orders`, con errores, timeouts, advertencias, mensajes repetidos y datos normales para probar los detectores.
+El seed contiene 39 logs de `payments`, `catalog`, `auth` y `orders`, con errores, timeouts, advertencias, mensajes repetidos y datos normales para probar los detectores.
 
 ### Variables de entorno
 
