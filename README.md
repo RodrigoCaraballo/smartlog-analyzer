@@ -80,6 +80,14 @@ Content-Type: application/json
 }
 ```
 
+### Listar logs
+
+```http
+GET /api/logs?page=1&limit=20&service=payments&level=ERROR&from=2026-11-02T00:00:00.000Z&to=2026-11-03T00:00:00.000Z
+```
+
+La respuesta incluye `items`, `page`, `limit`, `total` y `totalPages`. `limit` admite un máximo de 100 y los resultados se ordenan por `timestamp` descendente. Los filtros se ejecutan directamente mediante Prisma en PostgreSQL.
+
 ## Description
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
