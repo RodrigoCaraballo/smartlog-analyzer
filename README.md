@@ -79,6 +79,18 @@ Docker Compose funciona con los valores por defecto. Si se necesita personalizar
 
 No se incluyen API keys ni contraseñas reales en el repositorio. Los valores de PostgreSQL son únicamente credenciales locales de desarrollo.
 
+## Nota sobre la entrega en PIA
+
+La carpeta `prisma/migrations/` contiene archivos `.sql` que son **código fuente de migraciones de Prisma**, no bases de datos (`.db`, `.sqlite` o similares). Estas migraciones son necesarias para que `docker compose up --build` cree el esquema automáticamente.
+
+Si el validador de PIA rechaza los archivos `.sql` como si fueran archivos de base de datos, se puede generar un ZIP específico para la plataforma excluyendo `prisma/migrations/`. En ese caso:
+
+- el repositorio completo de GitHub conserva las migraciones y la ejecución autónoma con Docker Compose;
+- el ZIP de PIA conserva el código fuente, `prisma/schema.prisma`, el seed, Dockerfile, Compose y la documentación;
+- la exclusión se realiza únicamente por la limitación del validador, no porque las migraciones sean datos sensibles o una base de datos exportada.
+
+Para revisar el historial de commits, se debe compartir también el enlace al repositorio de GitHub, ya que el ZIP descargado para PIA no debe incluir `.git`.
+
 ## Uso de la API
 
 ### Crear un log
