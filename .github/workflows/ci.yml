@@ -14,14 +14,16 @@ concurrency:
 jobs:
   quality:
     name: Lint, tests and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgresql://smartlog:smartlog_dev@localhost:5432/smartlog
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -46,12 +48,12 @@ jobs:
 
   docker-integration:
     name: Docker Compose integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: quality
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate Compose configuration
         run: docker compose config

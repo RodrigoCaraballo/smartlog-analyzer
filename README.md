@@ -177,6 +177,8 @@ El workflow `.github/workflows/ci.yml` se ejecuta en cada push y en cada pull re
 
 El pipeline no necesita `OPENAI_API_KEY` porque el entorno de desarrollo usa `FakeIncidentSummarizer`. Los servicios se detienen y sus volúmenes se eliminan al finalizar la integración, incluso si falla.
 
+El job de calidad define una `DATABASE_URL` local de prueba para que Prisma pueda cargar su configuración durante `prisma generate`; no realiza conexiones a PostgreSQL en esa etapa.
+
 ## Uso de IA durante el desarrollo
 
 Se utilizó IA como asistente de desarrollo para:
