@@ -1,6 +1,17 @@
-const { PrismaClient } = require('@prisma/client');
+require('dotenv/config');
 
-const prisma = new PrismaClient();
+const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
+
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required to run the Prisma seed');
+}
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString }),
+});
 
 async function main() {
   const logs = [
