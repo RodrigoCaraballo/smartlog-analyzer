@@ -26,6 +26,7 @@ COPY package*.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./prisma.config.ts
 RUN npm ci --omit=dev && npm cache clean --force
+RUN npx prisma generate
 
 COPY --from=builder /app/dist ./dist
 COPY docker/entrypoint.sh ./docker/entrypoint.sh

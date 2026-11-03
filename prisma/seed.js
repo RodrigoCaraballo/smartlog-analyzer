@@ -43,6 +43,33 @@ async function main() {
     },
   ];
 
+  const generatedLogs = [];
+  const services = ['payments', 'catalog', 'auth', 'orders'];
+  const messages = [
+    'Connection timeout',
+    'Connection refused by upstream',
+    'Request completed successfully',
+    'User session refreshed',
+    'Order received',
+  ];
+
+  for (let index = 1; index <= 36; index += 1) {
+    const service = services[index % services.length];
+    const isError = index <= 12 || index % 9 === 0;
+    const message = index <= 6 ? 'Connection timeout' : messages[index % messages.length];
+    generatedLogs.push({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      service,
+      level: isError ? 'ERROR' : index % 4 === 0 ? 'WARN' : 'INFO',
+      message,
+      timestamp: new Date(Date.now() - index * 15000),
+      traceId: `seed-trace-${String((index % 8) + 1).padStart(3, '0')}`,
+      metadata: { source: 'development-seed', sequence: index },
+    });
+  }
+
+  logs.push(...generatedLogs);
+
   for (const log of logs) {
     await prisma.log.upsert({ where: { id: log.id }, update: {}, create: log });
   }

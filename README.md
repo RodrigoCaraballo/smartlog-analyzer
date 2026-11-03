@@ -1,60 +1,73 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# SmartLog Analyzer
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API para ingerir logs de microservicios y ejecutar análisis asíncronos de anomalías e incidentes. El proyecto usa NestJS, PostgreSQL, Redis y BullMQ con una arquitectura hexagonal.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Estructura
 
-## SmartLog Analyzer
+```text
+smartlog-analyzer/
+├── README.md
+├── ARCHITECTURE.md
+├── src/
+├── test/                 # Tests unitarios y e2e
+├── prisma/               # Schema, migraciones y seed
+├── Dockerfile
+├── docker-compose.yml
+└── .env.example
+```
 
-API para ingestar y analizar logs de microservicios. El proyecto utiliza NestJS y separa Presentación, Dominio e Infraestructura mediante módulos en cascada.
+Las migraciones y el seed están en `prisma/`, no en una carpeta `db/`.
 
-## Ejecutar con Docker Compose
+## Requisitos
 
-Requisitos: Docker Desktop con Compose habilitado.
+- Docker Desktop con Docker Compose.
+- Node.js 22 o superior para ejecutar comandos localmente.
+- npm.
+
+No es necesario instalar PostgreSQL ni Redis localmente para levantar el entorno Docker.
+
+## Cómo levantar el proyecto
+
+El siguiente comando construye la imagen, inicia PostgreSQL, Redis y la API, aplica las migraciones y carga datos de ejemplo automáticamente:
 
 ```bash
-cp .env.example .env
 docker compose up --build
 ```
 
-Servicios:
+No es necesario ejecutar `npm install`, `prisma migrate` ni un seed manualmente. Docker Compose espera a que PostgreSQL y Redis estén saludables antes de iniciar la API.
 
-- API: `http://localhost:3000`
-- Swagger: `http://localhost:3000/docs`
+Servicios disponibles:
+
+- API: <http://localhost:3000>
+- Swagger: <http://localhost:3000/docs>
+- Health: <http://localhost:3000/api/health>
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
-La base de datos ejecuta automáticamente la migración y el seed al crearse el volumen por primera vez. Para reinicializarla:
+Para detener el entorno:
+
+```bash
+docker compose down
+```
+
+Para borrar los volúmenes y volver a ejecutar migraciones y seed desde cero:
 
 ```bash
 docker compose down -v
 docker compose up --build
 ```
 
-Variables principales:
+El seed contiene logs de `payments`, `catalog`, `auth` y `orders`, con errores, timeouts, advertencias, mensajes repetidos y datos normales para probar los detectores.
+
+### Variables de entorno
+
+Docker Compose funciona con los valores por defecto. Si se necesita personalizar el entorno, se puede copiar `.env.example` a `.env`.
 
 | Variable | Uso | Valor por defecto |
 |---|---|---|
 | `APP_PORT` | Puerto publicado de la API | `3000` |
 | `POSTGRES_DB` | Nombre de la base | `smartlog` |
-| `POSTGRES_USER` | Usuario de PostgreSQL | `smartlog` |
+| `POSTGRES_USER` | Usuario local de PostgreSQL | `smartlog` |
 | `POSTGRES_PASSWORD` | Contraseña local de desarrollo | `smartlog_dev` |
 | `POSTGRES_PORT` | Puerto publicado de PostgreSQL | `5432` |
 | `OPENAI_API_KEY` | Clave del proveedor LLM | vacío |
@@ -62,163 +75,100 @@ Variables principales:
 | `OPENAI_TIMEOUT_MS` | Timeout del LLM | `20000` |
 | `REDIS_HOST` | Host de Redis | `localhost` local / `redis` Docker |
 | `REDIS_PORT` | Puerto de Redis | `6379` |
-| `ANALYSIS_QUEUE_NAME` | Nombre de la cola BullMQ | `log-analysis` |
+| `ANALYSIS_QUEUE_NAME` | Cola BullMQ | `log-analysis` |
 
-`CreateLog` utiliza Prisma como ORM y persiste los logs en PostgreSQL. Las migraciones de Prisma se encuentran en `prisma/migrations`.
+No se incluyen API keys ni contraseñas reales en el repositorio. Los valores de PostgreSQL son únicamente credenciales locales de desarrollo.
 
-## Endpoint disponible
+## Uso de la API
 
-```http
-POST /api/logs
-Content-Type: application/json
-```
+### Crear un log
 
-```json
-{
-  "service": "payments",
-  "level": "ERROR",
-  "message": "Connection timeout",
-  "timestamp": "2026-11-02T14:00:00.000Z",
-  "traceId": "trace-001",
-  "metadata": { "endpoint": "/payments" }
-}
+```bash
+curl.exe -X POST http://localhost:3000/api/logs ^
+  -H "Content-Type: application/json" ^
+  -d "{\"service\":\"payments\",\"level\":\"ERROR\",\"message\":\"Connection timeout\",\"timestamp\":\"2026-11-02T14:00:00.000Z\",\"metadata\":{\"endpoint\":\"/payments\"}}"
 ```
 
 ### Listar logs
 
 ```http
-GET /api/logs?page=1&limit=20&service=payments&level=ERROR&from=2026-11-02T00:00:00.000Z&to=2026-11-03T00:00:00.000Z
+GET /api/logs?page=1&limit=20&service=payments&level=ERROR
 ```
 
-La respuesta incluye `items`, `page`, `limit`, `total` y `totalPages`. `limit` admite un máximo de 100 y los resultados se ordenan por `timestamp` descendente. Los filtros se ejecutan directamente mediante Prisma en PostgreSQL.
+La respuesta contiene `items`, `page`, `limit`, `total` y `totalPages`. El límite máximo es 100.
 
-### Analizar logs
+### Programar un análisis
 
-El análisis acepta una lista de UUIDs, filtros o ambos. Cuando se envían ambos, deben cumplirse ambas condiciones.
-
-```http
-POST /api/logs/analyze
-Content-Type: application/json
+```bash
+curl.exe -X POST http://localhost:3000/api/logs/analyze ^
+  -H "Content-Type: application/json" ^
+  -d "{\"logIds\":[\"11111111-1111-4111-8111-111111111111\"]}"
 ```
 
-```json
-{
-  "logIds": ["11111111-1111-4111-8111-111111111111"],
-  "filters": {
-    "service": "payments",
-    "level": "ERROR"
-  }
-}
-```
-
-La solicitud responde `202 Accepted` con el identificador del análisis y estado `PENDING`; el pipeline se ejecuta en segundo plano mediante BullMQ/Redis. El estado y resultado se consultan con:
+La respuesta es `202 Accepted` con el identificador y estado `PENDING`. BullMQ procesa el análisis en segundo plano.
 
 ```http
 GET /api/analysis/{analysisId}
-```
-
-Los estados posibles son `PENDING`, `RUNNING`, `COMPLETED` y `FAILED`. El adaptador actual de desarrollo es `FakeIncidentSummarizer`, por lo que no requiere una API key.
-
-Para obtener directamente el reporte generado:
-
-```http
 GET /api/analysis/{analysisId}/report
-```
-
-Para verificar la disponibilidad de PostgreSQL y Redis:
-
-```http
 GET /api/health
 ```
 
-## Description
+Los estados de análisis son `PENDING`, `RUNNING`, `COMPLETED` y `FAILED`. El health check verifica PostgreSQL y Redis.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Tests
 
-## Project setup
-
-```bash
-$ npm install
-```
-
-## Compile and run the project
+Instalar dependencias y generar el cliente Prisma:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+npx prisma generate
 ```
 
-## Run tests
+Ejecutar tests unitarios:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm test -- --runInBand
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Ejecutar tests e2e:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run test:e2e
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Los e2e usan mocks de persistencia y desactivan el worker/Redis real mediante condiciones de test. No requieren PostgreSQL ni Redis locales.
 
-## Observability
+Ejecutar cobertura, build y lint:
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+```bash
+npm run test:cov
+npm run build
+npm run lint
+```
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+## Uso de IA durante el desarrollo
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+Se utilizó IA como asistente de desarrollo para:
 
-## Resources
+- revisar y convertir la arquitectura síncrona en un flujo asíncrono con BullMQ y Redis;
+- proponer contratos de puertos, casos de uso y adaptadores compatibles con arquitectura hexagonal;
+- generar escenarios de tests unitarios y e2e;
+- revisar respuestas HTTP, manejo de errores y condiciones de disponibilidad;
+- mejorar la documentación de ejecución y uso.
 
-Check out a few resources that may come in handy when working with NestJS:
+Las decisiones finales, el código, las validaciones, la revisión de dependencias y la ejecución de los tests fueron verificadas sobre este repositorio. La IA no recibió API keys ni secretos reales.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Qué quedó fuera y cómo resolverlo
 
-## Support
+- **Autenticación y autorización:** agregar JWT/OIDC, guards por endpoint y control de permisos.
+- **Outbox transaccional:** persistir eventos de publicación junto con `analyses` para evitar análisis `PENDING` sin job.
+- **Observabilidad avanzada:** incorporar métricas, tracing distribuido, logs estructurados y alertas.
+- **Proveedor LLM real en producción:** completar el adaptador OpenAI con timeout, redacción de datos sensibles, validación estricta y errores tipados. El desarrollo actual usa `FakeIncidentSummarizer`.
+- **Escalado del worker:** separar API y workers en servicios independientes y configurar concurrencia limitada.
+- **Retención y paginación de análisis:** agregar políticas de limpieza, filtros y paginación para historiales grandes.
+- **Pruebas automatizadas de infraestructura en CI:** automatizar en el pipeline la ejecución de Docker Compose y las verificaciones end-to-end sobre PostgreSQL, Redis, migraciones, seed y worker. Esta integración ya fue validada manualmente en el entorno local con `docker compose up --build`.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Documentación adicional
 
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `ARCHITECTURE.md`: decisiones, diagramas, contratos y estrategia de tests.
+- Swagger: <http://localhost:3000/docs> cuando la aplicación está levantada.
