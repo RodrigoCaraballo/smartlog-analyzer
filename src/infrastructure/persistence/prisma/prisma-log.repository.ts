@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from './prisma.service';
-import { Log } from '../../../domain/logs/entities/log.entity';
+import { Log, LogLevel } from '../../../domain/logs/entities/log.entity';
 import type { LogRepository } from '../../../domain/logs/ports/log.repository';
 
 @Injectable()
@@ -26,7 +26,7 @@ export class PrismaLogRepository implements LogRepository {
     return Log.create({
       id: persisted.id,
       service: persisted.service,
-      level: persisted.level as typeof value.level,
+      level: persisted.level as LogLevel,
       message: persisted.message,
       timestamp: persisted.timestamp,
       receivedAt: persisted.receivedAt,
