@@ -6,6 +6,8 @@ import type { AnalyzeLogsInput } from '../../../domain/analysis/inputs/analyze-l
 import { AnalyzeLogsDto } from '../logs/dto/analyze-logs.dto';
 import { AnalysisResponseDto } from '../logs/dto/analysis-response.dto';
 import type { ScheduledAnalysisOutput } from '../../../domain/analysis/outputs/scheduled-analysis.output';
+import { GetAnalysisReportUseCase } from '../../../domain/analysis/use-cases/get-analysis-report.use-case';
+import type { AnalysisReportOutput } from '../../../domain/analysis/outputs/analysis-report.output';
 
 @ApiTags('analysis')
 @Controller('api')
@@ -13,6 +15,7 @@ export class AnalysisController {
   constructor(
     private readonly schedule: ScheduleLogAnalysisUseCase,
     private readonly getAnalysis: GetAnalysisUseCase,
+    private readonly getReport: GetAnalysisReportUseCase,
   ) {}
 
   @Post('logs/analyze')
@@ -53,5 +56,15 @@ export class AnalysisController {
     const analysis = await this.getAnalysis.execute(id);
     if (!analysis) throw new NotFoundException('Analysis not found');
     return analysis;
+  }
+
+  @Get('analysis/:id/report')
+  @ApiOperation({ summary: 'Get the generated analysis report' })
+  @ApiResponse({ status: 200, description: 'Analysis report generated' })
+  @ApiResponse({ status: 404, description: 'Analysis not found' })
+  async report(@Param('id', new ParseUUIDPipe()) id: string): Promise<AnalysisReportOutput> {
+    const report = await this.getReport.execute(id);
+    if (!report) throw new NotFoundException('Analysis not found');
+    return report;
   }
 }

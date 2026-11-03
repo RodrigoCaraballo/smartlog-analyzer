@@ -119,6 +119,18 @@ GET /api/analysis/{analysisId}
 
 Los estados posibles son `PENDING`, `RUNNING`, `COMPLETED` y `FAILED`. El adaptador actual de desarrollo es `FakeIncidentSummarizer`, por lo que no requiere una API key.
 
+Para obtener directamente el reporte generado:
+
+```http
+GET /api/analysis/{analysisId}/report
+```
+
+Para verificar la disponibilidad de PostgreSQL y Redis:
+
+```http
+GET /api/health
+```
+
 ## Description
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.

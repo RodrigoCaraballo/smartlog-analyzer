@@ -13,6 +13,9 @@ import { ANALYSIS_QUEUE, type AnalysisQueue } from './analysis/ports/analysis.qu
 import { ScheduleLogAnalysisUseCase } from './analysis/use-cases/schedule-log-analysis.use-case';
 import { ProcessLogAnalysisUseCase } from './analysis/use-cases/process-log-analysis.use-case';
 import { GetAnalysisUseCase } from './analysis/use-cases/get-analysis.use-case';
+import { GetAnalysisReportUseCase } from './analysis/use-cases/get-analysis-report.use-case';
+import { CheckHealthUseCase } from './health/use-cases/check-health.use-case';
+import { HEALTH_CHECKS, type HealthCheckPort } from './health/ports/health-check.port';
 
 @Module({
   imports: [InfrastructureModule],
@@ -76,6 +79,16 @@ import { GetAnalysisUseCase } from './analysis/use-cases/get-analysis.use-case';
       useFactory: (repository: AnalysisRepository) => new GetAnalysisUseCase(repository),
       inject: [ANALYSIS_REPOSITORY],
     },
+    {
+      provide: GetAnalysisReportUseCase,
+      useFactory: (repository: AnalysisRepository) => new GetAnalysisReportUseCase(repository),
+      inject: [ANALYSIS_REPOSITORY],
+    },
+    {
+      provide: CheckHealthUseCase,
+      useFactory: (checks: Array<{ name: string; check: HealthCheckPort }>) => new CheckHealthUseCase(checks),
+      inject: [HEALTH_CHECKS],
+    },
   ],
   exports: [
     CreateLogUseCase,
@@ -84,6 +97,8 @@ import { GetAnalysisUseCase } from './analysis/use-cases/get-analysis.use-case';
     ScheduleLogAnalysisUseCase,
     ProcessLogAnalysisUseCase,
     GetAnalysisUseCase,
+    GetAnalysisReportUseCase,
+    CheckHealthUseCase,
   ],
 })
 export class DomainModule {}

@@ -674,6 +674,10 @@ sequenceDiagram
 
 Cuando termina, `status` será `COMPLETED` y `result` contendrá anomalías, incidentes y recomendaciones. Si el worker falla definitivamente, será `FAILED` con un `errorCode` seguro.
 
+`GET /api/analysis/{id}/report` devuelve el reporte generado para la ejecución, incluyendo `summary`, `result` y `generatedAt`. Si la ejecución todavía no existe responde `404`; el estado incluido permite distinguir reportes pendientes o fallidos.
+
+`GET /api/health` verifica PostgreSQL y Redis. Responde `200` con `status: "ok"` cuando ambas dependencias están disponibles y `503` con `status: "degraded"` cuando alguna no está disponible. Los detalles internos de conexión no se exponen.
+
 ## 10. Decisiones tomadas y alternativas descartadas
 
 ### Arquitectura hexagonal
@@ -925,6 +929,9 @@ Los tests cubrirán tanto el camino feliz como casos borde y fallos de dependenc
 - análisis en estado `PENDING` y `RUNNING`;
 - análisis fallido y reintento limitado;
 - análisis inexistente (`404`);
+- reporte de análisis generado;
+- health check con dependencias disponibles (`200`);
+- health check con dependencia no disponible (`503`);
 - consulta de análisis inexistente (`404`);
 - error de validación (`400`);
 - error interno controlado (`500`);

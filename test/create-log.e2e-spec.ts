@@ -4,11 +4,16 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/persistence/prisma/prisma.service';
+import { HEALTH_CHECKS } from '../src/domain/health/ports/health-check.port';
 
 describe('CreateLog (e2e)', () => {
   let app: INestApplication;
+  let analysisLookup: Record<string, unknown> | null;
+  let dependenciesAvailable = true;
 
   beforeEach(async () => {
+    analysisLookup = null;
+    dependenciesAvailable = true;
     const prismaMock = {
       log: {
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => data),
@@ -26,7 +31,7 @@ describe('CreateLog (e2e)', () => {
           completedAt: data.completedAt ?? new Date(),
           result: data.result ?? null,
         })),
-        findUnique: jest.fn(async () => null),
+        findUnique: jest.fn(async () => analysisLookup),
       },
       analysisLog: {
         createMany: jest.fn(async () => ({ count: 1 })),
@@ -36,6 +41,11 @@ describe('CreateLog (e2e)', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
+      .overrideProvider(HEALTH_CHECKS)
+      .useValue([
+        { name: 'database', check: { check: jest.fn(async () => { if (!dependenciesAvailable) throw new Error('down'); }) } },
+        { name: 'redis', check: { check: jest.fn(async () => { if (!dependenciesAvailable) throw new Error('down'); }) } },
+      ])
       .compile();
     app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
@@ -115,6 +125,46 @@ describe('CreateLog (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/analysis/11111111-1111-4111-8111-111111111111')
       .expect(404);
+  });
+
+  it('returns a completed analysis report', async () => {
+    analysisLookup = {
+      id: '11111111-1111-4111-8111-111111111111', status: 'COMPLETED',
+      createdAt: new Date('2026-11-03T10:00:00.000Z'), completedAt: new Date('2026-11-03T10:01:00.000Z'),
+      filters: {}, model: 'fake-rule-based-summarizer', summary: 'One incident',
+      result: { anomalies: [], incidents: [], recommendations: [] }, errorCode: null,
+      logs: [],
+    };
+
+    const response = await request(app.getHttpServer())
+      .get('/api/analysis/11111111-1111-4111-8111-111111111111/report')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      id: '11111111-1111-4111-8111-111111111111', status: 'COMPLETED',
+      summary: 'One incident', result: { anomalies: [], incidents: [], recommendations: [] },
+    });
+  });
+
+  it('reports healthy dependencies', async () => {
+    await request(app.getHttpServer())
+      .get('/api/health')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('ok');
+        expect(body.checks).toEqual({ database: 'up', redis: 'up' });
+      });
+  });
+
+  it('reports unavailable dependencies with 503', async () => {
+    dependenciesAvailable = false;
+    await request(app.getHttpServer())
+      .get('/api/health')
+      .expect(503)
+      .expect(({ body }) => {
+        expect(body.status).toBe('degraded');
+        expect(body.checks).toEqual({ database: 'down', redis: 'down' });
+      });
   });
 
   it('rejects an analysis without logIds or filters', async () => {

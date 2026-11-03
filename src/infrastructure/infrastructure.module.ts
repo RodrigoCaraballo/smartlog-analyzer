@@ -15,6 +15,9 @@ import { TimeServiceIncidentClusterer } from './analysis/time-service-incident-c
 import { FakeIncidentSummarizer } from './analysis/fake-incident-summarizer';
 import { ANALYSIS_QUEUE, } from '../domain/analysis/ports/analysis.queue';
 import { ANALYSIS_QUEUE_NAME, BullMqAnalysisQueue } from './queue/analysis.queue';
+import { PrismaHealthCheck } from './health/prisma-health-check';
+import { RedisHealthCheck } from './health/redis-health-check';
+import { HEALTH_CHECKS } from '../domain/health/ports/health-check.port';
 
 const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
 
@@ -34,6 +37,16 @@ const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKE
   providers: [
     PrismaLogRepository,
     PrismaAnalysisRepository,
+    PrismaHealthCheck,
+    RedisHealthCheck,
+    {
+      provide: HEALTH_CHECKS,
+      useFactory: (database: PrismaHealthCheck, redis: RedisHealthCheck) => [
+        { name: 'database', check: database },
+        { name: 'redis', check: redis },
+      ],
+      inject: [PrismaHealthCheck, RedisHealthCheck],
+    },
     RuleBasedAnomalyDetector,
     TimeServiceIncidentClusterer,
     FakeIncidentSummarizer,
@@ -54,6 +67,7 @@ const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKE
     INCIDENT_CLUSTERER,
     INCIDENT_SUMMARIZER,
     ANALYSIS_QUEUE,
+    HEALTH_CHECKS,
     ID_GENERATOR,
   ],
 })
