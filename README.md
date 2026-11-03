@@ -168,6 +168,15 @@ npm run build
 npm run lint
 ```
 
+## Integración continua
+
+El workflow `.github/workflows/ci.yml` se ejecuta en cada push y en cada pull request. Está dividido en dos etapas:
+
+1. **Quality:** instala con `npm ci`, genera Prisma, ejecuta lint, tests unitarios, e2e y build.
+2. **Docker integration:** valida Compose, levanta PostgreSQL, Redis y la API, verifica `/api/health`, confirma que el seed cargó logs y ejecuta un análisis asíncrono usando Redis y el worker reales.
+
+El pipeline no necesita `OPENAI_API_KEY` porque el entorno de desarrollo usa `FakeIncidentSummarizer`. Los servicios se detienen y sus volúmenes se eliminan al finalizar la integración, incluso si falla.
+
 ## Uso de IA durante el desarrollo
 
 Se utilizó IA como asistente de desarrollo para:
@@ -188,7 +197,6 @@ Las decisiones finales, el código, las validaciones, la revisión de dependenci
 - **Proveedor LLM real en producción:** completar el adaptador OpenAI con timeout, redacción de datos sensibles, validación estricta y errores tipados. El desarrollo actual usa `FakeIncidentSummarizer`.
 - **Escalado del worker:** separar API y workers en servicios independientes y configurar concurrencia limitada.
 - **Retención y paginación de análisis:** agregar políticas de limpieza, filtros y paginación para historiales grandes.
-- **Pruebas automatizadas de infraestructura en CI:** automatizar en el pipeline la ejecución de Docker Compose y las verificaciones end-to-end sobre PostgreSQL, Redis, migraciones, seed y worker. Esta integración ya fue validada manualmente en el entorno local con `docker compose up --build`.
 
 ## Documentación adicional
 

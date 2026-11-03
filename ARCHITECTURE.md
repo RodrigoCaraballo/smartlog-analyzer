@@ -939,6 +939,32 @@ Los tests cubrirán tanto el camino feliz como casos borde y fallos de dependenc
 
 Cada test debe verificar también el código HTTP y el formato consistente de la respuesta, no únicamente el contenido principal.
 
+### Pipeline de CI
+
+El workflow `.github/workflows/ci.yml` separa validaciones rápidas de integración real:
+
+```text
+Quality
+  -> npm ci
+  -> Prisma generate
+  -> lint
+  -> unit tests
+  -> e2e tests
+  -> build
+
+Docker integration
+  -> docker compose config
+  -> PostgreSQL + Redis + API
+  -> migrations + seed
+  -> GET /api/health
+  -> GET /api/logs
+  -> POST /api/logs/analyze
+  -> worker BullMQ real
+  -> GET /api/analysis/{id}/report
+```
+
+La integración usa el summarizer fake, por lo que no requiere secretos. Siempre limpia los contenedores y volúmenes al terminar. Esto complementa los e2e con mocks: los primeros son rápidos y deterministas, mientras que el job de Docker confirma que las migraciones, el seed, Redis, BullMQ y el worker funcionan juntos.
+
 ## 15. Criterio de implementación
 
 La implementación se hará en este orden:
