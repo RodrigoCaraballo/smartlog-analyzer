@@ -37,18 +37,7 @@ export class PrismaLogRepository implements LogRepository {
   }
 
   async findMany(input: ListLogsInput): Promise<{ items: Log[]; total: number }> {
-    const where = {
-      ...(input.service ? { service: input.service } : {}),
-      ...(input.level ? { level: input.level } : {}),
-      ...(input.from || input.to
-        ? {
-            timestamp: {
-              ...(input.from ? { gte: input.from } : {}),
-              ...(input.to ? { lte: input.to } : {}),
-            },
-          }
-        : {}),
-    };
+    const where = this.buildWhere(input);
     const skip = (input.page - 1) * input.limit;
 
     const [rows, total] = await Promise.all([
@@ -62,6 +51,32 @@ export class PrismaLogRepository implements LogRepository {
     ]);
 
     return { items: rows.map((row) => this.toDomain(row)), total };
+  }
+
+  private buildWhere(input: ListLogsInput): Prisma.LogWhereInput {
+    const where: Prisma.LogWhereInput = {};
+
+    if (input.service) {
+      where.service = input.service;
+    }
+
+    if (input.level) {
+      where.level = input.level;
+    }
+
+    if (input.from || input.to) {
+      where.timestamp = {};
+
+      if (input.from) {
+        where.timestamp.gte = input.from;
+      }
+
+      if (input.to) {
+        where.timestamp.lte = input.to;
+      }
+    }
+
+    return where;
   }
 
   private toDomain(row: {
