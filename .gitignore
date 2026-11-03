@@ -8,6 +8,8 @@
 
 # Logs
 logs
+!src/domain/logs/
+!src/domain/logs/**
 *.log
 npm-debug.log*
 pnpm-debug.log*
