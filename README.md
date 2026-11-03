@@ -39,6 +39,7 @@ Servicios:
 - API: `http://localhost:3000`
 - Swagger: `http://localhost:3000/docs`
 - PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
 
 La base de datos ejecuta automáticamente la migración y el seed al crearse el volumen por primera vez. Para reinicializarla:
 
@@ -59,6 +60,9 @@ Variables principales:
 | `OPENAI_API_KEY` | Clave del proveedor LLM | vacío |
 | `OPENAI_MODEL` | Modelo LLM | `gpt-4o-mini` |
 | `OPENAI_TIMEOUT_MS` | Timeout del LLM | `20000` |
+| `REDIS_HOST` | Host de Redis | `localhost` local / `redis` Docker |
+| `REDIS_PORT` | Puerto de Redis | `6379` |
+| `ANALYSIS_QUEUE_NAME` | Nombre de la cola BullMQ | `log-analysis` |
 
 `CreateLog` utiliza Prisma como ORM y persiste los logs en PostgreSQL. Las migraciones de Prisma se encuentran en `prisma/migrations`.
 
@@ -87,6 +91,33 @@ GET /api/logs?page=1&limit=20&service=payments&level=ERROR&from=2026-11-02T00:00
 ```
 
 La respuesta incluye `items`, `page`, `limit`, `total` y `totalPages`. `limit` admite un máximo de 100 y los resultados se ordenan por `timestamp` descendente. Los filtros se ejecutan directamente mediante Prisma en PostgreSQL.
+
+### Analizar logs
+
+El análisis acepta una lista de UUIDs, filtros o ambos. Cuando se envían ambos, deben cumplirse ambas condiciones.
+
+```http
+POST /api/logs/analyze
+Content-Type: application/json
+```
+
+```json
+{
+  "logIds": ["11111111-1111-4111-8111-111111111111"],
+  "filters": {
+    "service": "payments",
+    "level": "ERROR"
+  }
+}
+```
+
+La solicitud responde `202 Accepted` con el identificador del análisis y estado `PENDING`; el pipeline se ejecuta en segundo plano mediante BullMQ/Redis. El estado y resultado se consultan con:
+
+```http
+GET /api/analysis/{analysisId}
+```
+
+Los estados posibles son `PENDING`, `RUNNING`, `COMPLETED` y `FAILED`. El adaptador actual de desarrollo es `FakeIncidentSummarizer`, por lo que no requiere una API key.
 
 ## Description
 

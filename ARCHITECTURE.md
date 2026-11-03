@@ -47,9 +47,14 @@ flowchart LR
     subgraph Infrastructure[Infraestructura]
         Persistence[Adaptadores de persistencia]
         Database[(PostgreSQL)]
+        Queue[BullMQ / Redis]
+        Worker[Analysis Worker]
         OpenAI[Adaptador OpenAI]
         Config[Configuración]
         Persistence --> Database
+        Worker --> Queue
+        Worker --> Persistence
+        Worker --> OpenAI
         OpenAI --> Config
     end
 
@@ -57,6 +62,7 @@ flowchart LR
     UseCases -. implementados por .-> Persistence
     Ports -. implementados por .-> Persistence
     Ports -. implementados por .-> OpenAI
+    Ports -. implementados por .-> Queue
     UseCases --> Mappers
     Mappers --> Controllers
 ```
@@ -111,6 +117,8 @@ Responsabilidades:
 - convertir modelos de persistencia a entidades de dominio y viceversa;
 - ejecutar migraciones y consultas SQL/Prisma;
 - implementar el cliente de OpenAI;
+- publicar y consumir trabajos mediante BullMQ/Redis;
+- ejecutar el worker que procesa análisis en segundo plano;
 - leer configuración y secretos desde variables de entorno;
 - construir la aplicación y conectar adaptadores con sus puertos.
 
@@ -158,8 +166,14 @@ src/
     │   ├── openai/
     │   ├── prompts/
     │   └── parsers/
+    ├── queue/
+    │   ├── bullmq/
+    │   ├── analysis.worker.ts
+    │   └── analysis.queue.ts
     └── config/
 ```
+
+El worker podrá ejecutarse como un proceso separado de la API usando el mismo código de dominio e infraestructura. En desarrollo puede convivir en el mismo contenedor/proceso, pero la separación lógica debe mantenerse.
 
 Los nombres pueden cambiar durante la implementación, pero la separación de responsabilidades se mantiene.
 
@@ -169,11 +183,12 @@ Los nombres pueden cambiar durante la implementación, pero la separación de re
 |---|---|---|
 | `CreateLog` | Validar reglas de negocio y guardar un log | `LogRepository` |
 | `ListLogs` | Buscar logs aplicando filtros y paginación | `LogRepository` |
-| `AnalyzeLogs` | Obtener logs, invocar IA y guardar el análisis | `LogRepository`, `AnalysisRepository`, `LogAnalysisPort` |
+| `ScheduleLogAnalysis` | Validar la selección, crear el análisis y publicar un trabajo | `LogRepository`, `AnalysisRepository`, `AnalysisQueue` |
+| `ProcessLogAnalysis` | Ejecutar el pipeline, invocar IA y guardar el resultado | `LogRepository`, `AnalysisRepository`, `IncidentSummarizer` |
 | `GetAnalysis` | Recuperar un análisis persistido | `AnalysisRepository` |
 | `CheckHealth` | Verificar disponibilidad de dependencias | `HealthCheckPort` |
 
-Los casos de uso orquestan el flujo; los detalles de PostgreSQL y OpenAI quedan detrás de puertos.
+Los casos de uso orquestan el flujo; los detalles de PostgreSQL, Redis, BullMQ y OpenAI quedan detrás de puertos.
 
 ## 6. Patrón para la integración con LLM
 
@@ -187,10 +202,10 @@ export interface LogAnalysisPort {
 }
 ```
 
-`AnalyzeLogs` depende de `LogAnalysisPort`, no de OpenAI:
+`ProcessLogAnalysis` depende de `LogAnalysisPort`, no de OpenAI:
 
 ```text
-AnalyzeLogsUseCase
+ProcessLogAnalysisUseCase
   -> LogRepository.findByIds(...)
   -> LogAnalysisPort.analyze(logs)
   -> AnalysisRepository.save(result)
@@ -210,7 +225,7 @@ Es una combinación de **Hexagonal Architecture + Dependency Inversion + Anti-Co
 - el prompt queda encapsulado en el adaptador;
 - la respuesta externa se transforma y valida antes de convertirse en un resultado del dominio;
 - los tests del caso de uso pueden usar un `FakeLogAnalysisAdapter` sin hacer llamadas de red;
-- mañana se podría agregar `AnthropicLogAnalysisAdapter`, `GeminiLogAnalysisAdapter` o un modelo local sin cambiar `AnalyzeLogsUseCase`.
+- mañana se podría agregar `AnthropicLogAnalysisAdapter`, `GeminiLogAnalysisAdapter` o un modelo local sin cambiar `ProcessLogAnalysisUseCase`.
 
 No se propone un patrón `Strategy` adicional en esta primera versión: el puerto ya permite reemplazar el proveedor y agregar una selección por configuración si fuera necesario.
 
@@ -252,7 +267,7 @@ Se modelarán como errores técnicos de aplicación, sin exponer detalles ni API
 - `LlmInvalidResponseError`: respuesta válida HTTP pero formato inesperado;
 - `LlmConfigurationError`: falta configuración necesaria.
 
-Para este prototipo, `AnalyzeLogs` devolverá un error controlado si el análisis no puede completarse. No se guardará un análisis parcial como si fuera exitoso. La posibilidad de persistir estados `pending`, `completed` y `failed` queda abierta si se adopta procesamiento asíncrono.
+El worker marcará el análisis como `FAILED` si el pipeline no puede completarse. No se guardará un análisis parcial como si fuera exitoso. BullMQ permitirá configurar reintentos para fallos transitorios; los errores de formato del LLM deben terminar como fallo definitivo y no reintentarse indefinidamente.
 
 ### Uso de OpenAI
 
@@ -268,7 +283,7 @@ La clave se leerá únicamente en Infraestructura. Nunca debe aparecer en DTOs, 
 
 ## 6.1 Pipeline de análisis de logs
 
-El análisis completo se modela como un pipeline orquestado por `AnalyzeLogsUseCase`:
+El análisis completo se modela como un pipeline ejecutado por `ProcessLogAnalysisUseCase` dentro de un worker:
 
 ```text
 ParseLog
@@ -332,7 +347,7 @@ class RuleBasedAnomalyDetector implements AnomalyDetector {
 }
 ```
 
-En una iteración posterior se podrán agregar reglas estadísticas o un detector basado en ML sin modificar `AnalyzeLogsUseCase`, porque ambos implementarán el mismo puerto `AnomalyDetector`.
+En una iteración posterior se podrán agregar reglas estadísticas o un detector basado en ML sin modificar `ProcessLogAnalysisUseCase`, porque ambos implementarán el mismo puerto `AnomalyDetector`.
 
 ### `ParseLog` es una etapa condicional
 
@@ -367,18 +382,28 @@ interface IncidentSummarizer {
 }
 
 interface AnalysisRepository {
-  save(report: AnalysisReport): Promise<AnalysisReport>;
+  createPending(input: AnalysisInput): Promise<Analysis>;
+  markRunning(id: string): Promise<void>;
+  complete(id: string, result: AnalysisResult): Promise<Analysis>;
+  fail(id: string, errorCode: string): Promise<Analysis>;
+  findById(id: string): Promise<Analysis | null>;
+}
+
+interface AnalysisQueue {
+  publish(input: { analysisId: string }): Promise<{ jobId: string }>;
 }
 ```
 
 `IncidentSummarizer` es el único puerto que inicialmente implementará OpenAI. La detección de anomalías seguirá siendo basada en reglas y no dependerá de OpenAI. El nombre expresa la capacidad del dominio y evita que el caso de uso dependa de una marca o SDK específico. Si en el futuro se necesita una segunda capacidad de IA —por ejemplo, clasificación— se agrega otro puerto explícito en lugar de crear un `LLMProvider` genérico con demasiadas responsabilidades.
 
-### Orquestador del caso de uso
+### Orquestadores y worker
 
-El caso de uso coordina el pipeline, pero no conoce cómo se parsea, detecta, agrupa, resume o persiste:
+`ScheduleLogAnalysisUseCase` valida la selección, crea el análisis en estado `PENDING` y publica únicamente el `analysisId`. No ejecuta OpenAI ni las reglas.
+
+`ProcessLogAnalysisUseCase`, ejecutado por el worker, coordina el pipeline, pero no conoce cómo se detecta, agrupa, resume o persiste:
 
 ```typescript
-export class AnalyzeLogsUseCase {
+export class ProcessLogAnalysisUseCase {
   constructor(
     private readonly detector: AnomalyDetector,
     private readonly clusterer: IncidentClusterer,
@@ -386,8 +411,10 @@ export class AnalyzeLogsUseCase {
     private readonly repository: AnalysisRepository,
   ) {}
 
-  async execute(input: AnalyzeLogsInput): Promise<AnalyzeLogsOutput> {
-    const anomalies = await this.detector.detect(input.logs);
+  async execute(analysisId: string): Promise<void> {
+    const logs = await this.logRepository.findByAnalysisId(analysisId);
+    await this.analysisRepository.markRunning(analysisId);
+    const anomalies = await this.detector.detect(logs);
     const incidents = await this.clusterer.cluster(anomalies);
 
     const reports: IncidentReport[] = [];
@@ -397,13 +424,12 @@ export class AnalyzeLogsUseCase {
       reports.push({ incident, summary });
     }
 
-    const report = AnalysisReport.create({
-      sourceLogIds: input.logs.map((log) => log.id),
+    const result = AnalysisResult.create({
+      sourceLogIds: logs.map((log) => log.id),
       incidents: reports,
     });
 
-    await this.repository.save(report);
-    return { report };
+    await this.analysisRepository.complete(analysisId, result);
   }
 }
 ```
@@ -418,7 +444,7 @@ Infrastructure module
   ANALYSIS_REPOSITORY  -> PrismaAnalysisRepository
 ```
 
-Así, los tests pueden construir el caso de uso con fakes directamente, sin levantar NestJS.
+Así, los tests pueden construir los casos de uso con fakes directamente, sin levantar NestJS ni Redis.
 
 ### ¿Secuencial o paralelo?
 
@@ -557,11 +583,19 @@ interface LogRepository {
   findById(id: string): Promise<Log | null>;
   findMany(filter: LogFilter): Promise<Paginated<Log>>;
   findByIds(ids: string[]): Promise<Log[]>;
+  findForAnalysis(selection: AnalysisSelection): Promise<Log[]>;
 }
 
 interface AnalysisRepository {
-  save(analysis: Analysis): Promise<Analysis>;
+  createPending(input: CreateAnalysisInput): Promise<Analysis>;
+  markRunning(id: string): Promise<void>;
+  complete(id: string, result: AnalysisResult): Promise<Analysis>;
+  fail(id: string, errorCode: string): Promise<Analysis>;
   findById(id: string): Promise<Analysis | null>;
+}
+
+interface AnalysisQueue {
+  publish(input: { analysisId: string }): Promise<{ jobId: string }>;
 }
 ```
 
@@ -572,27 +606,73 @@ Los adaptadores Prisma implementarán estos contratos. Las entidades de dominio 
 ```mermaid
 sequenceDiagram
     participant C as Cliente
-    participant P as Controller
-    participant U as AnalyzeLogsUseCase
-    participant R as LogRepository
-    participant L as LogAnalysisPort
-    participant O as OpenAiAdapter
+    participant P as AnalysisController
+    participant S as ScheduleLogAnalysis
     participant A as AnalysisRepository
+    participant Q as AnalysisQueue
+    participant W as AnalysisWorker
+    participant U as ProcessLogAnalysis
+    participant R as LogRepository
+    participant L as IncidentSummarizer
+    participant DB as PostgreSQL
 
     C->>P: POST /api/logs/analyze
     P->>P: validar DTO y mapear a Input
-    P->>U: execute(input)
-    U->>R: findByIds(logIds)
-    R-->>U: Logs de dominio
-    U->>L: analyze(logAnalysisInput)
-    L->>O: llamada OpenAI + timeout
-    O-->>L: resultado validado
-    L-->>U: LogAnalysisResult
-    U->>A: save(Analysis)
-    A-->>U: Analysis persistido
-    U-->>P: Output de aplicación
-    P-->>C: respuesta HTTP
+    P->>S: execute(input)
+    S->>R: findForAnalysis(selection)
+    R-->>S: logs seleccionados
+    S->>A: save(PENDING + analysis_logs)
+    A->>DB: transacción
+    S->>Q: publish(analysisId)
+    Q-->>S: jobId
+    S-->>P: id + PENDING
+    P-->>C: 202 Accepted
+
+    Q->>W: consume(analysisId)
+    W->>A: mark RUNNING
+    W->>U: execute(analysisId)
+    U->>R: findByIds(snapshot)
+    R-->>U: logs de dominio
+    U->>L: summarize(incidents)
+    L-->>U: resultados validados
+    U->>A: save(COMPLETED/FAILED)
+    A->>DB: actualización transaccional
+
+    C->>P: GET /api/analysis/{id}
+    P->>A: findById(id)
+    A-->>P: estado / resultado
+    P-->>C: 200 OK
 ```
+
+### Contrato HTTP asíncrono
+
+`POST /api/logs/analyze` no devuelve el reporte completo. Luego de validar la selección y persistir la ejecución, responde:
+
+```http
+202 Accepted
+```
+
+```json
+{
+  "id": "analysis-uuid",
+  "status": "PENDING",
+  "message": "Analysis scheduled"
+}
+```
+
+`GET /api/analysis/{id}` devuelve el estado actual:
+
+```json
+{
+  "id": "analysis-uuid",
+  "status": "RUNNING",
+  "createdAt": "2026-11-03T12:00:00.000Z",
+  "completedAt": null,
+  "result": null
+}
+```
+
+Cuando termina, `status` será `COMPLETED` y `result` contendrá anomalías, incidentes y recomendaciones. Si el worker falla definitivamente, será `FAILED` con un `errorCode` seguro.
 
 ## 10. Decisiones tomadas y alternativas descartadas
 
@@ -614,11 +694,24 @@ sequenceDiagram
 - **Alternativa descartada inicialmente:** pedirle al LLM que detecte todas las anomalías.
 - **Motivo:** las reglas son más económicas, reproducibles, auditables y fáciles de probar. También permiten conservar evidencia concreta de cada anomalía. OpenAI se reserva para resumir incidentes y sugerir acciones, donde el lenguaje natural aporta más valor.
 
-### Procesamiento síncrono inicial
+### Procesamiento asíncrono
 
-- **Elegido inicialmente:** `POST /api/logs/analyze` espera el resultado.
-- **Alternativa considerada:** cola con Redis/Bull y respuesta `202 Accepted`.
-- **Motivo:** el alcance es un prototipo y el flujo síncrono es más simple de levantar y demostrar. Si el análisis tarda o el volumen crece, se migrará a procesamiento asíncrono.
+- **Elegido:** `POST /api/logs/analyze` valida, crea una ejecución `PENDING`, publica un job en BullMQ y responde `202 Accepted` con el `analysisId`.
+- **Alternativa descartada:** esperar el resultado completo del pipeline en la misma request.
+- **Motivo:** el análisis puede involucrar llamadas lentas al LLM y no debe mantener conexiones HTTP abiertas. El worker permite controlar concurrencia, reintentos y escalabilidad independientemente de la API.
+
+### Cola de trabajos
+
+- **Elegida:** BullMQ sobre Redis.
+- **Alternativas descartadas:** RabbitMQ y procesamiento en memoria.
+- **Motivo:** BullMQ cubre retries, backoff, estados y concurrencia con una infraestructura menor que RabbitMQ. El procesamiento en memoria no es durable y se perdería al reiniciar la aplicación.
+
+### Consistencia entre base de datos y cola
+
+- **Elegida para el MVP:** persistir `analyses` y `analysis_logs` en una transacción, y publicar el `analysisId` después del commit.
+- **Riesgo conocido:** si la aplicación se cae después del commit y antes de publicar, el análisis podría quedar en `PENDING`.
+- **Mitigación inicial:** un job periódico que detecte ejecuciones `PENDING` sin job y las reprograme.
+- **Mejora futura:** patrón Outbox transaccional para garantizar la publicación.
 
 ### PostgreSQL
 
@@ -655,26 +748,27 @@ La arquitectura queda suficientemente definida para comenzar la implementación.
 5. **Límite:** máximo de 100 logs por análisis.
 6. **Detección:** reglas deterministas configuradas en código inicialmente.
 7. **Agrupación:** por servicio, patrón de error y ventana temporal.
-8. **Ejecución:** síncrona en el MVP.
+8. **Ejecución:** asíncrona mediante BullMQ y Redis.
 9. **OpenAI:** se utiliza para resumir incidentes y generar recomendaciones; el modelo se configura mediante variable de entorno.
 10. **Timeout:** 20 segundos para la llamada al proveedor.
-11. **Reintentos:** no habrá reintentos automáticos en la primera versión.
+11. **Reintentos:** BullMQ tendrá reintentos limitados para fallos transitorios, con backoff; los errores de formato del LLM serán fallos definitivos.
 12. **Respuesta inválida del LLM:** el análisis falla con un error controlado.
 13. **Persistencia:** los logs son inmutables y `analysis_logs` conserva el conjunto exacto analizado.
 14. **Resultado:** `analyses.result` contiene un JSONB estructurado y validado antes de persistirse.
 15. **Privacidad:** se redactarán tokens, emails, IPs u otros secretos antes de enviar información a OpenAI.
 16. **Autenticación:** fuera del alcance del MVP.
 17. **Paginación:** `page` y `limit` en el listado de logs.
-18. **Base de datos de desarrollo:** PostgreSQL mediante Docker Compose.
+18. **Cola de trabajo:** Redis mediante Docker Compose.
+19. **Base de datos de desarrollo:** PostgreSQL mediante Docker Compose.
+20. **Configuración de cola:** `REDIS_HOST`, `REDIS_PORT` y `ANALYSIS_QUEUE_NAME` mediante variables de entorno.
 
-Los estados `PENDING` y `RUNNING` se conservan en el modelo para permitir una futura ejecución asíncrona, aunque el flujo inicial será síncrono.
+El `POST /api/logs/analyze` devuelve únicamente el identificador y estado inicial. El resultado final se consulta mediante `GET /api/analysis/{id}`.
 
 ## 12. Mejoras futuras, no bloqueantes
 
 Quedan fuera de la definición mínima y no bloquean la implementación:
 
-- procesamiento asíncrono con una cola;
-- reintentos y fallback de proveedor LLM;
+- fallback de proveedor LLM;
 - persistencia del prompt y respuesta original;
 - autenticación y autorización;
 - métricas y tracing distribuidos;
@@ -825,6 +919,12 @@ Los tests cubrirán tanto el camino feliz como casos borde y fallos de dependenc
 - `GET /api/logs` con filtros y paginación;
 - `GET /api/logs` con página fuera de rango;
 - análisis exitoso;
+- `POST /api/logs/analyze` responde `202` con un `analysisId`;
+- publicación del job con el identificador correcto;
+- worker procesa un job exitosamente;
+- análisis en estado `PENDING` y `RUNNING`;
+- análisis fallido y reintento limitado;
+- análisis inexistente (`404`);
 - consulta de análisis inexistente (`404`);
 - error de validación (`400`);
 - error interno controlado (`500`);

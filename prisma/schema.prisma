@@ -15,10 +15,39 @@ model Log {
   receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
   traceId    String?  @map("trace_id") @db.VarChar(255)
   metadata   Json     @default("{}")
+  analyses   AnalysisLog[]
 
   @@index([service, timestamp(sort: Desc)])
   @@index([level, timestamp(sort: Desc)])
   @@index([receivedAt(sort: Desc)])
   @@index([traceId])
   @@map("logs")
+}
+
+model Analysis {
+  id          String         @id @default(uuid()) @db.Uuid
+  status      String         @db.VarChar(20)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt DateTime?      @map("completed_at") @db.Timestamptz(6)
+  filters     Json           @default("{}")
+  model       String?        @db.VarChar(100)
+  summary     String?        @db.Text
+  result      Json?
+  errorCode   String?        @map("error_code") @db.VarChar(100)
+  logs        AnalysisLog[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("analyses")
+}
+
+model AnalysisLog {
+  analysisId String   @map("analysis_id") @db.Uuid
+  logId      String   @map("log_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  log        Log      @relation(fields: [logId], references: [id], onDelete: Restrict)
+
+  @@id([analysisId, logId])
+  @@index([logId])
+  @@map("analysis_logs")
 }

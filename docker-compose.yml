@@ -14,8 +14,13 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-20000}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ANALYSIS_QUEUE_NAME: ${ANALYSIS_QUEUE_NAME:-log-analysis}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - smartlog-network
@@ -41,8 +46,26 @@ services:
     networks:
       - smartlog-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: smartlog-analyzer-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - smartlog-network
+
 volumes:
   postgres-data:
+  redis-data:
 
 networks:
   smartlog-network:

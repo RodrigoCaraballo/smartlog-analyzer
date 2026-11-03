@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from './prisma.service';
 import { Log, LogLevel } from '../../../domain/logs/entities/log.entity';
 import type { ListLogsInput } from '../../../domain/logs/inputs/list-logs.input';
+import type { AnalyzeLogsFilters } from '../../../domain/analysis/inputs/analyze-logs.input';
 import type { LogRepository } from '../../../domain/logs/ports/log.repository';
 
 @Injectable()
@@ -53,6 +54,25 @@ export class PrismaLogRepository implements LogRepository {
     return { items: rows.map((row) => this.toDomain(row)), total };
   }
 
+  async findForAnalysis(selection: { logIds?: string[]; filters?: AnalyzeLogsFilters }): Promise<Log[]> {
+    const where = this.buildAnalysisWhere(selection);
+    const rows = await this.prisma.log.findMany({
+      where,
+      orderBy: { timestamp: 'asc' },
+      take: 101,
+    });
+
+    return rows.map((row) => this.toDomain(row));
+  }
+
+  async findByIds(ids: string[]): Promise<Log[]> {
+    const rows = await this.prisma.log.findMany({
+      where: { id: { in: ids } },
+      orderBy: { timestamp: 'asc' },
+    });
+    return rows.map((row) => this.toDomain(row));
+  }
+
   private buildWhere(input: ListLogsInput): Prisma.LogWhereInput {
     const where: Prisma.LogWhereInput = {};
 
@@ -73,6 +93,40 @@ export class PrismaLogRepository implements LogRepository {
 
       if (input.to) {
         where.timestamp.lte = input.to;
+      }
+    }
+
+    return where;
+  }
+
+  private buildAnalysisWhere(selection: {
+    logIds?: string[];
+    filters?: AnalyzeLogsFilters;
+  }): Prisma.LogWhereInput {
+    const where: Prisma.LogWhereInput = {};
+    const filters = selection.filters;
+
+    if (selection.logIds?.length) {
+      where.id = { in: selection.logIds };
+    }
+
+    if (filters?.service) {
+      where.service = filters.service;
+    }
+
+    if (filters?.level) {
+      where.level = filters.level;
+    }
+
+    if (filters?.from || filters?.to) {
+      where.timestamp = {};
+
+      if (filters.from) {
+        where.timestamp.gte = filters.from;
+      }
+
+      if (filters.to) {
+        where.timestamp.lte = filters.to;
       }
     }
 

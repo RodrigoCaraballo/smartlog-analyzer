@@ -13,12 +13,25 @@ describe('CreateLog (e2e)', () => {
       log: {
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => data),
         findMany: jest.fn(async () => [{
-          id: 'log-1', service: 'payments', level: 'ERROR', message: 'Connection timeout',
+          id: '11111111-1111-4111-8111-111111111111', service: 'payments', level: 'ERROR', message: 'Connection timeout',
           timestamp: new Date('2026-11-02T14:00:00.000Z'),
           receivedAt: new Date('2026-11-02T14:00:01.000Z'), traceId: null, metadata: {},
         }]),
         count: jest.fn(async () => 1),
       },
+      analysis: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          ...data,
+          createdAt: data.createdAt ?? new Date(),
+          completedAt: data.completedAt ?? new Date(),
+          result: data.result ?? null,
+        })),
+        findUnique: jest.fn(async () => null),
+      },
+      analysisLog: {
+        createMany: jest.fn(async () => ({ count: 1 })),
+      },
+      $transaction: jest.fn(async (callback: (transaction: unknown) => unknown) => callback(prismaMock)),
     };
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
@@ -77,12 +90,37 @@ describe('CreateLog (e2e)', () => {
       totalPages: 1,
     });
     expect(response.body.items).toHaveLength(1);
-    expect(response.body.items[0]).toMatchObject({ id: 'log-1', service: 'payments', level: 'ERROR' });
+    expect(response.body.items[0]).toMatchObject({ id: '11111111-1111-4111-8111-111111111111', service: 'payments', level: 'ERROR' });
   });
 
   it('rejects invalid list filters', async () => {
     await request(app.getHttpServer())
       .get('/api/logs?level=TRACE&limit=101')
+      .expect(400);
+  });
+
+  it('schedules the analysis and returns 202 without running the pipeline', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/logs/analyze')
+      .send({ logIds: ['11111111-1111-4111-8111-111111111111'] })
+      .expect(202);
+
+    expect(response.body).toMatchObject({
+      status: 'PENDING',
+    });
+    expect(response.body.id).toEqual(expect.any(String));
+  });
+
+  it('returns 404 for an unknown analysis', async () => {
+    await request(app.getHttpServer())
+      .get('/api/analysis/11111111-1111-4111-8111-111111111111')
+      .expect(404);
+  });
+
+  it('rejects an analysis without logIds or filters', async () => {
+    await request(app.getHttpServer())
+      .post('/api/logs/analyze')
+      .send({})
       .expect(400);
   });
 });
